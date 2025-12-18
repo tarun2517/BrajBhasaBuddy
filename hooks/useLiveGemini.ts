@@ -1,11 +1,8 @@
-
-// Fix: Added React import to satisfy React namespace usage in RefObject type definitions
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import { ConnectionState, GeoLocation } from '../types';
 import { searchMaps } from '../services/mapService';
 
-// Standardized Audio Decoding for Raw PCM
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -84,9 +81,8 @@ const mapToolDeclaration: FunctionDeclaration = {
 };
 
 export const useLiveGemini = (
-  // Fix: Explicitly using React.RefObject which requires React to be imported
-  videoRef: React.RefObject<HTMLVideoElement>,
-  canvasRef: React.RefObject<HTMLCanvasElement>,
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
   userLocation: GeoLocation | null
 ) => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
@@ -106,15 +102,10 @@ export const useLiveGemini = (
   }, [userLocation]);
 
   const connect = useCallback(async () => {
-    if (!process.env.API_KEY) {
-      setConnectionState(ConnectionState.ERROR);
-      return;
-    }
-
     try {
       setConnectionState(ConnectionState.CONNECTING);
       
-      // Always create a fresh instance before connecting to avoid stale state or network issues
+      // Crucial: Create fresh instance to get the latest injected API Key
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -134,14 +125,21 @@ export const useLiveGemini = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction: `
-            You are "Braj Bhasha Buddy", a funny, casual navigator who speaks in a mix of Hindi and the Braj Bhasha dialect. 
-            You call the user 'Lalla', 'Bhaiya', or 'Tau'. You are helpful but crack jokes about their driving or the traffic.
+            You are "Braj Bhasha Buddy", a hilarious and grumpy but loving AR navigator from the streets of Mathura.
+            You speak in a thick Braj Bhasha dialect mixed with Hindi and occasionally broken English.
             
-            Key phrases: "Kaha ja ryo hai?", "Dekh lalla", "Moiku lag rao hai ki tu bhatak gayo hai", "Are o bhaiya, idhar dekh".
+            Personality:
+            - You call the user 'Lalla', 'Tau', 'Bhaiya', or 'Hore Chhore'.
+            - You are sarcastic about their driving/walking speed ("Are tortoise bhi tujhse tez chale hai lalla!").
+            - You treat the camera view as your eyes. If you see something interesting (cow, traffic, temple), comment on it in a funny way.
+            - If they ask for directions, use 'lookUpMapInfo' but spice up the response with local attitude.
             
-            Use the 'lookUpMapInfo' tool for any place or directions query.
-            React to what you see in the camera feed. If you see people, greet them in Braj. If you see a road, give funny advice.
-            Keep responses short and punchy (max 2 sentences usually).
+            Catchphrases: 
+            - "Kaha baagyo ja ryo hai?" (Where are you running off to?)
+            - "Are moiku lagyo tu bhatak gayo!" (I think you're lost!)
+            - "Radhe Radhe japte chal, rasta kat jayego."
+            
+            Keep responses very short (1-2 sentences) to keep it conversational. Focus on the AR/Camera context.
           `,
           tools: [{ functionDeclarations: [mapToolDeclaration] }],
         },
@@ -158,12 +156,11 @@ export const useLiveGemini = (
               
               sessionPromise.then((session) => {
                 session.sendRealtimeInput({ media: pcmBlob });
-              }).catch(console.error);
+              }).catch(() => {});
               
               let sum = 0;
               for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
-              const rms = Math.sqrt(sum / inputData.length);
-              setVolume(rms);
+              setVolume(Math.sqrt(sum / inputData.length));
             };
             
             source.connect(scriptProcessor);
@@ -187,7 +184,7 @@ export const useLiveGemini = (
                              session.sendRealtimeInput({
                                media: { data: base64Data, mimeType: 'image/jpeg' }
                              });
-                         }).catch(console.error);
+                         }).catch(() => {});
                        }
                      }, 'image/jpeg', 0.5);
                    }
@@ -223,7 +220,7 @@ export const useLiveGemini = (
               for (const fc of message.toolCall.functionCalls) {
                 if (fc.name === 'lookUpMapInfo') {
                    const query = (fc.args as any).query;
-                   const loc = locationRef.current || { lat: 27.4924, lng: 77.6737 }; // Mathura default
+                   const loc = locationRef.current || { lat: 27.4924, lng: 77.6737 }; // Default Mathura
                    const resultText = await searchMaps(query, loc);
                    
                    functionResponses.push({
@@ -237,7 +234,7 @@ export const useLiveGemini = (
               if (functionResponses.length > 0) {
                  sessionPromise.then((session) => {
                    session.sendToolResponse({ functionResponses });
-                 }).catch(console.error);
+                 }).catch(() => {});
               }
             }
 
@@ -250,10 +247,16 @@ export const useLiveGemini = (
                setIsTalking(false);
             }
           },
-          onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
+          onclose: () => {
+            setConnectionState(ConnectionState.DISCONNECTED);
+            if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+          },
           onerror: (e) => {
             console.error("Live API Error:", e);
             setConnectionState(ConnectionState.ERROR);
+            if (e.message?.includes("entity was not found")) {
+               // Likely API key mismatch or invalid
+            }
           }
         }
       });
