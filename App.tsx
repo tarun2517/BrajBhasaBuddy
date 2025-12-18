@@ -1,5 +1,6 @@
+
 import React, { useEffect, useRef, useState } from 'react';
-import { Camera, MapPin, Mic, MicOff, Navigation, Power, AlertTriangle, MessageSquare } from 'lucide-react';
+import { Camera, MapPin, Mic, MicOff, Navigation, Power, AlertTriangle, MessageCircle } from 'lucide-react';
 import { useLiveGemini } from './hooks/useLiveGemini';
 import { ConnectionState, GeoLocation } from './types';
 
@@ -9,14 +10,11 @@ const App: React.FC = () => {
   const [location, setLocation] = useState<GeoLocation | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
-  // Hook for Live API logic
   const { connect, disconnect, connectionState, isTalking, volume } = useLiveGemini(videoRef, canvasRef, location);
 
-  // Initialize Camera and Geolocation
   useEffect(() => {
     const init = async () => {
       try {
-        // Geolocation
         if ('geolocation' in navigator) {
           navigator.geolocation.watchPosition(
             (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -25,19 +23,18 @@ const App: React.FC = () => {
           );
         }
 
-        // Camera
         const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { 
-                facingMode: "environment", // Use back camera if available
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
+                facingMode: "environment",
+                width: { ideal: 1920 },
+                height: { ideal: 1080 }
             } 
         });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
       } catch (err) {
-        setPermissionError("Please allow camera and location access to use this app.");
+        setPermissionError("Camera aur Location ki permission to de de lalla!");
       }
     };
     init();
@@ -52,118 +49,133 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col items-center justify-center">
-      {/* Hidden Canvas for Video Processing */}
+    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col items-center justify-center font-sans">
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Camera Feed Layer */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 w-full h-full object-cover z-0 opacity-80"
+        className="absolute inset-0 w-full h-full object-cover z-0 brightness-75 transition-all duration-700"
       />
 
-      {/* Error Overlay */}
       {permissionError && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 p-6">
-          <div className="text-center text-red-500">
-            <AlertTriangle className="w-12 h-12 mx-auto mb-4" />
-            <p className="text-xl font-bold">{permissionError}</p>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-8">
+          <div className="text-center max-w-md">
+            <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-6" />
+            <h1 className="text-2xl font-bold text-white mb-2">Are Lalla!</h1>
+            <p className="text-gray-300 mb-6">{permissionError}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-white text-black rounded-full font-bold hover:bg-gray-200 transition-colors"
+            >
+              Fir se koshish kar
+            </button>
           </div>
         </div>
       )}
 
       {/* HUD Layer */}
-      <div className="absolute inset-0 z-10 flex flex-col justify-between p-4 pointer-events-none">
+      <div className="absolute inset-0 z-10 flex flex-col justify-between p-6 pointer-events-none">
         
-        {/* Top Bar */}
-        <div className="flex items-center justify-between pointer-events-auto">
-          <div className="bg-black/40 backdrop-blur-md rounded-full px-4 py-2 flex items-center gap-2 text-white border border-white/10">
-            <div className={`w-3 h-3 rounded-full ${
-              connectionState === ConnectionState.CONNECTED ? 'bg-green-500 animate-pulse' : 
-              connectionState === ConnectionState.CONNECTING ? 'bg-yellow-500' : 'bg-red-500'
-            }`} />
-            <span className="text-sm font-medium">
-                {connectionState === ConnectionState.CONNECTED ? 'Braj Bhasha Buddy Live' : 
-                 connectionState === ConnectionState.CONNECTING ? 'Connecting...' : 'Offline'}
-            </span>
-          </div>
-          
-          {location && (
-            <div className="bg-black/40 backdrop-blur-md rounded-full px-4 py-2 flex items-center gap-2 text-white border border-white/10">
-              <MapPin className="w-4 h-4 text-blue-400" />
-              <span className="text-xs font-mono">
-                {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+        {/* Top Status */}
+        <div className="flex items-start justify-between pointer-events-auto">
+          <div className="flex flex-col gap-2">
+            <div className="bg-white/10 backdrop-blur-xl rounded-full px-4 py-2 flex items-center gap-3 text-white border border-white/20 shadow-lg">
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                connectionState === ConnectionState.CONNECTED ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 
+                connectionState === ConnectionState.CONNECTING ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+              }`} />
+              <span className="text-xs font-bold uppercase tracking-widest">
+                  {connectionState === ConnectionState.CONNECTED ? 'Buddy Online' : 
+                   connectionState === ConnectionState.CONNECTING ? 'Bula ryo hu...' : 'Offline'}
               </span>
             </div>
-          )}
+            
+            {location && (
+              <div className="bg-white/5 backdrop-blur-md rounded-lg px-3 py-1.5 flex items-center gap-2 text-white/70 border border-white/10 self-start">
+                <MapPin className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-mono tracking-tighter">
+                  {location.lat.toFixed(5)}N / {location.lng.toFixed(5)}E
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-black/20 backdrop-blur-md rounded-full p-2 border border-white/10">
+            <Navigation className="w-5 h-5 text-white/80" />
+          </div>
         </div>
 
-        {/* Center Status (Voice Activity) */}
+        {/* Dynamic Voice Feedback */}
         <div className="flex-1 flex items-center justify-center">
-            {connectionState === ConnectionState.CONNECTED && (
-                <div className="flex flex-col items-center gap-4">
-                    {/* Visualizer for Voice Volume */}
-                    <div className="flex items-end gap-1 h-12">
-                         {[...Array(5)].map((_, i) => (
-                             <div 
-                                key={i}
-                                className={`w-3 bg-gradient-to-t from-orange-500 to-yellow-300 rounded-full transition-all duration-75`}
-                                style={{ 
-                                    height: isTalking 
-                                        ? `${Math.max(20, Math.random() * 100)}%` 
-                                        : volume > 0.05 
-                                            ? `${Math.min(100, volume * 100 * (i+1))}%` // Simple visual feedback for user input
-                                            : '20%'
-                                }}
-                             />
-                         ))}
+            {(connectionState === ConnectionState.CONNECTED || connectionState === ConnectionState.CONNECTING) && (
+                <div className="flex flex-col items-center gap-6">
+                    <div className="flex items-center justify-center gap-2 h-20">
+                         {[...Array(8)].map((_, i) => {
+                             const isActive = isTalking || volume > 0.02;
+                             const scale = isTalking ? (Math.random() * 1.5 + 0.5) : (volume * 15 * (i % 2 === 0 ? 1 : 1.5));
+                             return (
+                                <div 
+                                    key={i}
+                                    className={`w-1.5 bg-gradient-to-b from-indigo-400 to-cyan-300 rounded-full transition-all duration-150 ${!isActive ? 'opacity-20 h-2' : 'opacity-100 h-16'}`}
+                                    style={{ 
+                                        height: isActive ? `${Math.min(100, 20 + (scale * 30))}%` : '8px',
+                                        transitionDelay: `${i * 30}ms`
+                                    }}
+                                 />
+                             );
+                         })}
                     </div>
                     {isTalking && (
-                        <div className="bg-black/50 backdrop-blur-sm px-6 py-2 rounded-2xl border border-white/20 animate-in fade-in zoom-in duration-300">
-                             <p className="text-yellow-300 font-medium italic">"Bhaiya, sun raho hu..."</p>
+                        <div className="px-6 py-3 bg-indigo-600/30 backdrop-blur-xl rounded-full border border-indigo-400/30 animate-pulse">
+                             <p className="text-white font-semibold text-sm tracking-wide">"Suno Lalla..."</p>
                         </div>
                     )}
                 </div>
             )}
         </div>
 
-        {/* Bottom Controls */}
-        <div className="flex flex-col gap-4 pointer-events-auto items-center mb-6">
-            
-            {/* Context/Hint */}
+        {/* Bottom Bar */}
+        <div className="flex flex-col gap-6 pointer-events-auto items-center mb-4">
             {connectionState === ConnectionState.DISCONNECTED && (
-                 <div className="bg-black/60 backdrop-blur-md p-4 rounded-xl max-w-sm text-center border border-white/10">
-                    <h2 className="text-lg font-bold text-white mb-1">Navigation ka saathi 🧭</h2>
-                    <p className="text-sm text-gray-300">
-                        Connect to start talking with your funny Braj-speaking map guide. 
-                        Ask "Kaha jana hai?" or "Where is the nearest cafe?"
+                 <div className="bg-white/10 backdrop-blur-2xl p-6 rounded-3xl max-w-xs text-center border border-white/20 shadow-2xl transition-all duration-500 animate-in slide-in-from-bottom-10">
+                    <MessageCircle className="w-8 h-8 text-indigo-400 mx-auto mb-3" />
+                    <h2 className="text-xl font-black text-white mb-2 leading-tight tracking-tight">Radhe Radhe!</h2>
+                    <p className="text-sm text-gray-300 leading-relaxed">
+                        Apne Braj Buddy se baat kar. Poochh "Lalla, Vrindavan kitni door hai?"
                     </p>
                  </div>
             )}
 
-            {/* Main Action Button */}
-            <button
-                onClick={handleToggleConnection}
-                className={`
-                    w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 scale-100 active:scale-95
-                    ${connectionState === ConnectionState.CONNECTED 
-                        ? 'bg-red-500 hover:bg-red-600 shadow-red-500/50' 
-                        : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/50'
-                    }
-                `}
-            >
-                {connectionState === ConnectionState.CONNECTED ? (
-                    <Power className="w-8 h-8 text-white" />
-                ) : (
-                    <Mic className="w-8 h-8 text-white" />
-                )}
-            </button>
-            <span className="text-xs text-white/50 font-medium">
-                {connectionState === ConnectionState.CONNECTED ? 'Tap to End' : 'Tap to Start'}
-            </span>
+            <div className="flex items-center gap-6">
+              <button
+                  onClick={handleToggleConnection}
+                  disabled={connectionState === ConnectionState.CONNECTING}
+                  className={`
+                      w-24 h-24 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.5)] transition-all duration-500 group relative
+                      ${connectionState === ConnectionState.CONNECTED 
+                          ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30 border-4 border-white/20' 
+                          : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/30 border-4 border-white/20'
+                      }
+                      ${connectionState === ConnectionState.CONNECTING ? 'opacity-50 cursor-not-allowed' : 'active:scale-90'}
+                  `}
+              >
+                  {connectionState === ConnectionState.CONNECTED ? (
+                      <Power className="w-10 h-10 text-white" />
+                  ) : (
+                      <Mic className="w-10 h-10 text-white group-hover:scale-110 transition-transform" />
+                  )}
+                  {connectionState === ConnectionState.CONNECTED && (
+                    <div className="absolute -inset-2 rounded-full border-2 border-red-500/50 animate-ping" />
+                  )}
+              </button>
+            </div>
+            
+            <p className="text-[10px] text-white/40 font-black uppercase tracking-[0.2em]">
+                {connectionState === ConnectionState.CONNECTED ? 'Kaat de baatcheet' : 'Buddy ko bulao'}
+            </p>
         </div>
       </div>
     </div>

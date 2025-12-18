@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+
+// Fix: Added React import to satisfy React namespace usage in RefObject type definitions
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
 import { ConnectionState, GeoLocation } from '../types';
 import { searchMaps } from '../services/mapService';
 
-// Audio Context Helpers
+// Standardized Audio Decoding for Raw PCM
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
@@ -21,6 +23,16 @@ async function decodeAudioData(
     }
   }
   return buffer;
+}
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function encode(bytes: Uint8Array) {
@@ -49,7 +61,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64data = reader.result as string;
-      // Remove data URL prefix
       resolve(base64data.split(',')[1]);
     };
     reader.onerror = reject;
@@ -57,7 +68,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Tool Definition for the Live API
 const mapToolDeclaration: FunctionDeclaration = {
   name: 'lookUpMapInfo',
   description: 'Search for real-time places, directions, or map information relative to the user location.',
@@ -74,24 +84,21 @@ const mapToolDeclaration: FunctionDeclaration = {
 };
 
 export const useLiveGemini = (
+  // Fix: Explicitly using React.RefObject which requires React to be imported
   videoRef: React.RefObject<HTMLVideoElement>,
   canvasRef: React.RefObject<HTMLCanvasElement>,
   userLocation: GeoLocation | null
 ) => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
-  const [isTalking, setIsTalking] = useState(false); // Model is outputting audio
+  const [isTalking, setIsTalking] = useState(false);
   const [volume, setVolume] = useState(0);
 
-  // Refs for persistent objects
-  const aiRef = useRef<GoogleGenAI | null>(null);
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const videoIntervalRef = useRef<number | null>(null);
-  
-  // Store location in ref to access in callbacks without dependency issues
   const locationRef = useRef<GeoLocation | null>(userLocation);
   
   useEffect(() => {
@@ -100,7 +107,6 @@ export const useLiveGemini = (
 
   const connect = useCallback(async () => {
     if (!process.env.API_KEY) {
-      console.error("API Key missing");
       setConnectionState(ConnectionState.ERROR);
       return;
     }
@@ -108,8 +114,8 @@ export const useLiveGemini = (
     try {
       setConnectionState(ConnectionState.CONNECTING);
       
+      // Always create a fresh instance before connecting to avoid stale state or network issues
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      aiRef.current = ai;
 
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -128,16 +134,14 @@ export const useLiveGemini = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction: `
-            You are a funny, casual companion who speaks in a mix of Hindi and the Braj Bhasha dialect (like people from Mathura/Vrindavan). 
-            You call the user 'Lalla', 'Bhaiya', or 'Tau'. You are helpful but crack jokes. 
+            You are "Braj Bhasha Buddy", a funny, casual navigator who speaks in a mix of Hindi and the Braj Bhasha dialect. 
+            You call the user 'Lalla', 'Bhaiya', or 'Tau'. You are helpful but crack jokes about their driving or the traffic.
             
-            Your goal is to help the user navigate using the camera feed and map data.
-            If the user asks where something is, use the 'lookUpMapInfo' tool.
+            Key phrases: "Kaha ja ryo hai?", "Dekh lalla", "Moiku lag rao hai ki tu bhatak gayo hai", "Are o bhaiya, idhar dekh".
             
-            Keep your responses short, punchy, and conversational (1-3 sentences max usually). 
-            React to what you see in the video feed if relevant.
-            
-            Example Braj phrases: "Kaha ja ryo hai?", "Dekh lalla", "Moiku lag rao hai".
+            Use the 'lookUpMapInfo' tool for any place or directions query.
+            React to what you see in the camera feed. If you see people, greet them in Braj. If you see a road, give funny advice.
+            Keep responses short and punchy (max 2 sentences usually).
           `,
           tools: [{ functionDeclarations: [mapToolDeclaration] }],
         },
@@ -145,28 +149,26 @@ export const useLiveGemini = (
           onopen: () => {
             setConnectionState(ConnectionState.CONNECTED);
             
-            // 1. Setup Audio Input Stream
             const source = inputAudioContext.createMediaStreamSource(stream);
             const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
             
             scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
               const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
               const pcmBlob = createBlob(inputData);
-              sessionPromise.then((session: any) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-              });
               
-              // Simple volume meter logic
+              sessionPromise.then((session) => {
+                session.sendRealtimeInput({ media: pcmBlob });
+              }).catch(console.error);
+              
               let sum = 0;
               for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
               const rms = Math.sqrt(sum / inputData.length);
-              setVolume(Math.min(rms * 5, 1));
+              setVolume(rms);
             };
             
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputAudioContext.destination);
 
-            // 2. Setup Video Stream
             if (videoRef.current && canvasRef.current) {
                videoIntervalRef.current = window.setInterval(() => {
                  const video = videoRef.current;
@@ -174,40 +176,33 @@ export const useLiveGemini = (
                  if (video && canvas && video.videoWidth > 0) {
                    const ctx = canvas.getContext('2d');
                    if (ctx) {
-                     canvas.width = video.videoWidth * 0.2; // Scale down
-                     canvas.height = video.videoHeight * 0.2;
+                     canvas.width = 320; 
+                     canvas.height = 180;
                      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                      
                      canvas.toBlob(async (blob) => {
                        if (blob) {
                          const base64Data = await blobToBase64(blob);
-                         sessionPromise.then((session: any) => {
+                         sessionPromise.then((session) => {
                              session.sendRealtimeInput({
                                media: { data: base64Data, mimeType: 'image/jpeg' }
                              });
-                         });
+                         }).catch(console.error);
                        }
-                     }, 'image/jpeg', 0.6);
+                     }, 'image/jpeg', 0.5);
                    }
                  }
                }, 1000); 
             }
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Handle Audio Output
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio) {
               setIsTalking(true);
               const ctx = outputAudioContextRef.current;
               if (ctx) {
                  nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-                 
-                 // Decode base64 to byte array
-                 const binaryString = atob(base64Audio);
-                 const len = binaryString.length;
-                 const bytes = new Uint8Array(len);
-                 for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-                 
+                 const bytes = decode(base64Audio);
                  const audioBuffer = await decodeAudioData(bytes, ctx, 24000, 1);
                  
                  const source = ctx.createBufferSource();
@@ -223,14 +218,12 @@ export const useLiveGemini = (
               }
             }
             
-            // Handle Tool Calls
             if (message.toolCall) {
-              console.log("Tool call received", message.toolCall);
               const functionResponses = [];
               for (const fc of message.toolCall.functionCalls) {
                 if (fc.name === 'lookUpMapInfo') {
                    const query = (fc.args as any).query;
-                   const loc = locationRef.current || { lat: 28.6139, lng: 77.2090 };
+                   const loc = locationRef.current || { lat: 27.4924, lng: 77.6737 }; // Mathura default
                    const resultText = await searchMaps(query, loc);
                    
                    functionResponses.push({
@@ -242,25 +235,24 @@ export const useLiveGemini = (
               }
               
               if (functionResponses.length > 0) {
-                 sessionPromise.then((session: any) => {
+                 sessionPromise.then((session) => {
                    session.sendToolResponse({ functionResponses });
-                 });
+                 }).catch(console.error);
               }
             }
 
-            // Handle interruptions
             if (message.serverContent?.interrupted) {
-               sourcesRef.current.forEach(source => source.stop());
+               sourcesRef.current.forEach(source => {
+                 try { source.stop(); } catch(e) {}
+               });
                sourcesRef.current.clear();
                nextStartTimeRef.current = 0;
                setIsTalking(false);
             }
           },
-          onclose: () => {
-            setConnectionState(ConnectionState.DISCONNECTED);
-          },
+          onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
           onerror: (e) => {
-            console.error("Session Error", e);
+            console.error("Live API Error:", e);
             setConnectionState(ConnectionState.ERROR);
           }
         }
@@ -271,27 +263,14 @@ export const useLiveGemini = (
       console.error("Connection failed", error);
       setConnectionState(ConnectionState.ERROR);
     }
-  }, [videoRef, canvasRef]); // Dependencies
+  }, [videoRef, canvasRef]);
 
   const disconnect = useCallback(() => {
-     if (videoIntervalRef.current) {
-       clearInterval(videoIntervalRef.current);
-       videoIntervalRef.current = null;
-     }
-     
-     if (inputAudioContextRef.current) {
-       inputAudioContextRef.current.close();
-       inputAudioContextRef.current = null;
-     }
-     
-     if (outputAudioContextRef.current) {
-       outputAudioContextRef.current.close();
-       outputAudioContextRef.current = null;
-     }
-     
-     sourcesRef.current.forEach(s => s.stop());
+     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+     if (inputAudioContextRef.current) inputAudioContextRef.current.close();
+     if (outputAudioContextRef.current) outputAudioContextRef.current.close();
+     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
      sourcesRef.current.clear();
-     
      setConnectionState(ConnectionState.DISCONNECTED);
   }, []);
 
