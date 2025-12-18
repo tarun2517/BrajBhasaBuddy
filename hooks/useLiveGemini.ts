@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
-import { ConnectionState, GeoLocation } from '../types';
+import { ConnectionState, GeoLocation, MapSearchResult } from '../types';
 import { searchMaps } from '../services/mapService';
 
 async function decodeAudioData(
@@ -83,13 +83,15 @@ const mapToolDeclaration: FunctionDeclaration = {
 export const useLiveGemini = (
   videoRef: React.RefObject<HTMLVideoElement | null>,
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  userLocation: GeoLocation | null
+  userLocation: GeoLocation | null,
+  onMapResults: (results: MapSearchResult) => void,
+  onResetKey: () => void
 ) => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
   const [isTalking, setIsTalking] = useState(false);
   const [volume, setVolume] = useState(0);
 
-  const sessionPromiseRef = useRef<Promise<any> | null>(null);
+  const sessionRef = useRef<any>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
@@ -104,8 +106,6 @@ export const useLiveGemini = (
   const connect = useCallback(async () => {
     try {
       setConnectionState(ConnectionState.CONNECTING);
-      
-      // Crucial: Create fresh instance to get the latest injected API Key
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -125,156 +125,112 @@ export const useLiveGemini = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction: `
-            You are "Braj Bhasha Buddy", a hilarious and grumpy but loving AR navigator from the streets of Mathura.
-            You speak in a thick Braj Bhasha dialect mixed with Hindi and occasionally broken English.
-            
-            Personality:
-            - You call the user 'Lalla', 'Tau', 'Bhaiya', or 'Hore Chhore'.
-            - You are sarcastic about their driving/walking speed ("Are tortoise bhi tujhse tez chale hai lalla!").
-            - You treat the camera view as your eyes. If you see something interesting (cow, traffic, temple), comment on it in a funny way.
-            - If they ask for directions, use 'lookUpMapInfo' but spice up the response with local attitude.
-            
-            Catchphrases: 
-            - "Kaha baagyo ja ryo hai?" (Where are you running off to?)
-            - "Are moiku lagyo tu bhatak gayo!" (I think you're lost!)
-            - "Radhe Radhe japte chal, rasta kat jayego."
-            
-            Keep responses very short (1-2 sentences) to keep it conversational. Focus on the AR/Camera context.
+            You are "Braj Bhasha Buddy", a hilarious AR navigator. 
+            You speak Braj Bhasha (Mathura style Hindi).
+            You act as if you are actually inside the phone, looking through the camera.
+            If you see the user, call them "Lalla" or "Gunda".
+            If they ask for directions, you MUST use the lookUpMapInfo tool.
+            Be grumpy but funny. Complain about the user's choices.
+            Always keep answers extremely brief (max 10-15 words).
           `,
           tools: [{ functionDeclarations: [mapToolDeclaration] }],
         },
         callbacks: {
           onopen: () => {
             setConnectionState(ConnectionState.CONNECTED);
-            
             const source = inputAudioContext.createMediaStreamSource(stream);
             const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-            
-            scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-              const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+            scriptProcessor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
               const pcmBlob = createBlob(inputData);
-              
-              sessionPromise.then((session) => {
-                session.sendRealtimeInput({ media: pcmBlob });
-              }).catch(() => {});
-              
+              sessionPromise.then(s => s.sendRealtimeInput({ media: pcmBlob })).catch(() => {});
               let sum = 0;
               for(let i=0; i<inputData.length; i++) sum += inputData[i] * inputData[i];
               setVolume(Math.sqrt(sum / inputData.length));
             };
-            
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputAudioContext.destination);
 
-            if (videoRef.current && canvasRef.current) {
-               videoIntervalRef.current = window.setInterval(() => {
-                 const video = videoRef.current;
-                 const canvas = canvasRef.current;
-                 if (video && canvas && video.videoWidth > 0) {
-                   const ctx = canvas.getContext('2d');
-                   if (ctx) {
-                     canvas.width = 320; 
-                     canvas.height = 180;
-                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                     
-                     canvas.toBlob(async (blob) => {
-                       if (blob) {
-                         const base64Data = await blobToBase64(blob);
-                         sessionPromise.then((session) => {
-                             session.sendRealtimeInput({
-                               media: { data: base64Data, mimeType: 'image/jpeg' }
-                             });
-                         }).catch(() => {});
-                       }
-                     }, 'image/jpeg', 0.5);
-                   }
-                 }
-               }, 1000); 
-            }
+            videoIntervalRef.current = window.setInterval(() => {
+              const video = videoRef.current;
+              const canvas = canvasRef.current;
+              if (video && canvas && video.videoWidth > 0) {
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  canvas.width = 320;
+                  canvas.height = 180;
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                  canvas.toBlob(async (blob) => {
+                    if (blob) {
+                      const data = await blobToBase64(blob);
+                      sessionPromise.then(s => s.sendRealtimeInput({ media: { data, mimeType: 'image/jpeg' }})).catch(() => {});
+                    }
+                  }, 'image/jpeg', 0.5);
+                }
+              }
+            }, 1000);
           },
-          onmessage: async (message: LiveServerMessage) => {
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio) {
+          onmessage: async (msg) => {
+            const audio = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (audio) {
               setIsTalking(true);
               const ctx = outputAudioContextRef.current;
               if (ctx) {
-                 nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
-                 const bytes = decode(base64Audio);
-                 const audioBuffer = await decodeAudioData(bytes, ctx, 24000, 1);
-                 
-                 const source = ctx.createBufferSource();
-                 source.buffer = audioBuffer;
-                 source.connect(outputNode);
-                 source.addEventListener('ended', () => {
-                   sourcesRef.current.delete(source);
-                   if (sourcesRef.current.size === 0) setIsTalking(false);
-                 });
-                 source.start(nextStartTimeRef.current);
-                 nextStartTimeRef.current += audioBuffer.duration;
-                 sourcesRef.current.add(source);
+                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, ctx.currentTime);
+                const buffer = await decodeAudioData(decode(audio), ctx, 24000, 1);
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(outputNode);
+                source.onended = () => {
+                  sourcesRef.current.delete(source);
+                  if (sourcesRef.current.size === 0) setIsTalking(false);
+                };
+                source.start(nextStartTimeRef.current);
+                nextStartTimeRef.current += buffer.duration;
+                sourcesRef.current.add(source);
               }
             }
-            
-            if (message.toolCall) {
-              const functionResponses = [];
-              for (const fc of message.toolCall.functionCalls) {
+            if (msg.toolCall) {
+              for (const fc of msg.toolCall.functionCalls) {
                 if (fc.name === 'lookUpMapInfo') {
-                   const query = (fc.args as any).query;
-                   const loc = locationRef.current || { lat: 27.4924, lng: 77.6737 }; // Default Mathura
-                   const resultText = await searchMaps(query, loc);
-                   
-                   functionResponses.push({
-                     id: fc.id,
-                     name: fc.name,
-                     response: { result: resultText }
-                   });
+                  try {
+                    const result = await searchMaps((fc.args as any).query, locationRef.current || { lat: 0, lng: 0 });
+                    onMapResults(result);
+                    sessionPromise.then(s => s.sendToolResponse({
+                      functionResponses: { id: fc.id, name: fc.name, response: { result: result.text } }
+                    }));
+                  } catch (e: any) {
+                    if (e.message?.includes("Requested entity was not found")) onResetKey();
+                  }
                 }
               }
-              
-              if (functionResponses.length > 0) {
-                 sessionPromise.then((session) => {
-                   session.sendToolResponse({ functionResponses });
-                 }).catch(() => {});
-              }
             }
-
-            if (message.serverContent?.interrupted) {
-               sourcesRef.current.forEach(source => {
-                 try { source.stop(); } catch(e) {}
-               });
-               sourcesRef.current.clear();
-               nextStartTimeRef.current = 0;
-               setIsTalking(false);
+            if (msg.serverContent?.interrupted) {
+              sourcesRef.current.forEach(s => { try { s.stop(); } catch {} });
+              sourcesRef.current.clear();
+              setIsTalking(false);
             }
           },
-          onclose: () => {
-            setConnectionState(ConnectionState.DISCONNECTED);
-            if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
-          },
-          onerror: (e) => {
-            console.error("Live API Error:", e);
+          onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
+          onerror: (e: any) => {
+            console.error(e);
+            if (e.message?.includes("Requested entity was not found")) onResetKey();
             setConnectionState(ConnectionState.ERROR);
-            if (e.message?.includes("entity was not found")) {
-               // Likely API key mismatch or invalid
-            }
           }
         }
       });
-      sessionPromiseRef.current = sessionPromise;
-
-    } catch (error) {
-      console.error("Connection failed", error);
+      sessionRef.current = await sessionPromise;
+    } catch (err: any) {
+      if (err.message?.includes("Requested entity was not found")) onResetKey();
       setConnectionState(ConnectionState.ERROR);
     }
-  }, [videoRef, canvasRef]);
+  }, [videoRef, canvasRef, onMapResults, onResetKey]);
 
   const disconnect = useCallback(() => {
-     if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
-     if (inputAudioContextRef.current) inputAudioContextRef.current.close();
-     if (outputAudioContextRef.current) outputAudioContextRef.current.close();
-     sourcesRef.current.forEach(s => { try { s.stop(); } catch(e) {} });
-     sourcesRef.current.clear();
-     setConnectionState(ConnectionState.DISCONNECTED);
+    if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    if (inputAudioContextRef.current) inputAudioContextRef.current.close();
+    if (outputAudioContextRef.current) outputAudioContextRef.current.close();
+    setConnectionState(ConnectionState.DISCONNECTED);
   }, []);
 
   return { connect, disconnect, connectionState, isTalking, volume };

@@ -10,10 +10,12 @@ export enum ConnectionState {
   ERROR = 'ERROR'
 }
 
+export interface GroundingLink {
+  uri: string;
+  title: string;
+}
+
 export interface MapSearchResult {
-  summary: string;
-  places?: Array<{
-    name: string;
-    address?: string;
-  }>;
+  text: string;
+  links: GroundingLink[];
 }

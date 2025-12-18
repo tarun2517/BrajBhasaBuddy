@@ -1,56 +1,64 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Camera, MapPin, Mic, MicOff, Navigation, Power, AlertTriangle, MessageCircle, Map as MapIcon, Send, Key } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { MapPin, Power, AlertTriangle, MessageCircle, Map as MapIcon, Send, Key, ExternalLink, Compass } from 'lucide-react';
 import { useLiveGemini } from './hooks/useLiveGemini';
-import { ConnectionState, GeoLocation } from './types';
+import { ConnectionState, GeoLocation, MapSearchResult } from './types';
 
 const App: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [location, setLocation] = useState<GeoLocation | null>(null);
   const [destination, setDestination] = useState("");
-  const [currentDestination, setCurrentDestination] = useState<string | null>(null);
+  const [mapResult, setMapResult] = useState<MapSearchResult | null>(null);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
-  
-  const { connect, disconnect, connectionState, isTalking, volume } = useLiveGemini(videoRef, canvasRef, location);
+  const [isInitializing, setIsInitializing] = useState(true);
+
+  const onResetKey = useCallback(async () => {
+    setHasApiKey(false);
+    await window.aistudio.openSelectKey();
+    setHasApiKey(true);
+  }, []);
+
+  const { connect, disconnect, connectionState, isTalking, volume } = useLiveGemini(
+    videoRef, 
+    canvasRef, 
+    location, 
+    setMapResult, 
+    onResetKey
+  );
 
   useEffect(() => {
     const checkApiKey = async () => {
       const selected = await window.aistudio.hasSelectedApiKey();
       setHasApiKey(selected);
+      setIsInitializing(false);
     };
     checkApiKey();
 
-    const init = async () => {
+    const initPerms = async () => {
       try {
         if ('geolocation' in navigator) {
           navigator.geolocation.watchPosition(
             (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-            (err) => console.warn("Geo error", err),
+            (err) => console.warn("Location error", err),
             { enableHighAccuracy: true }
           );
         }
-
         const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                facingMode: "environment",
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            } 
+          video: { facingMode: "environment" },
+          audio: true
         });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
+        if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (err) {
-        setPermissionError("Camera aur Location ki permission to de de lalla!");
+        setPermissionError("Are lalla! Camera aur location to chahiye tabhi to batayenge rasta!");
       }
     };
-    init();
+    initPerms();
   }, []);
 
   const handleOpenKey = async () => {
     await window.aistudio.openSelectKey();
-    setHasApiKey(true);
+    setHasApiKey(true); // Proceed immediately as per instructions
   };
 
   const handleToggleConnection = () => {
@@ -61,40 +69,39 @@ const App: React.FC = () => {
     }
   };
 
-  const setTarget = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (destination.trim()) {
-      setCurrentDestination(destination.trim());
-      // Logic for Buddy to react to new destination can be handled via its system prompt and current context
-    }
-  };
+  if (isInitializing) return null;
 
   if (!hasApiKey) {
     return (
-      <div className="h-screen w-screen bg-[#0f172a] flex flex-col items-center justify-center p-6 text-center">
-        <div className="braj-gradient p-4 rounded-3xl mb-8 shadow-2xl shadow-orange-500/20">
-          <MapIcon className="w-16 h-16 text-white" />
+      <div className="h-screen w-screen bg-[#050505] flex flex-col items-center justify-center p-8 text-center">
+        <div className="relative mb-12">
+          <div className="absolute inset-0 bg-orange-600 blur-3xl opacity-20 animate-pulse"></div>
+          <div className="braj-gradient p-6 rounded-[2.5rem] relative shadow-2xl">
+            <MapIcon className="w-20 h-20 text-white" />
+          </div>
         </div>
-        <h1 className="text-4xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500 uppercase tracking-tighter">Braj Bhasha Buddy</h1>
-        <p className="text-gray-400 mb-8 max-w-sm">
-          Are Lalla! This app needs a paid Gemini API key to talk and show maps. Select yours to start the journey.
+        <h1 className="text-5xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-br from-orange-400 via-red-500 to-purple-600 uppercase tracking-tighter">
+          Braj Cyber Buddy
+        </h1>
+        <p className="text-gray-400 mb-10 max-w-sm text-lg leading-relaxed">
+          Ram Ram Ji! To start talking with your AR guide, please select your Gemini API key.
         </p>
         <button 
           onClick={handleOpenKey}
-          className="flex items-center gap-3 px-8 py-4 braj-gradient rounded-full font-bold text-lg hover:scale-105 transition-transform active:scale-95"
+          className="flex items-center gap-4 px-10 py-5 braj-gradient rounded-full font-black text-xl hover:scale-105 transition-all shadow-xl shadow-orange-600/20 active:scale-95"
         >
-          <Key className="w-6 h-6" />
+          <Key className="w-7 h-7" />
           Select API Key
         </button>
-        <p className="mt-6 text-xs text-gray-500">
-          More info at <a href="https://ai.google.dev/gemini-api/docs/billing" className="underline" target="_blank">ai.google.dev/gemini-api/docs/billing</a>
-        </p>
+        <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" className="mt-8 text-xs text-gray-600 hover:text-orange-500 underline transition-colors">
+          Billing Documentation
+        </a>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col items-center justify-center font-sans">
+    <div className="relative w-full h-screen bg-black overflow-hidden font-sans">
       <canvas ref={canvasRef} className="hidden" />
 
       <video
@@ -102,163 +109,133 @@ const App: React.FC = () => {
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 w-full h-full object-cover z-0 brightness-75 transition-all duration-1000 scale-[1.02]"
+        className="absolute inset-0 w-full h-full object-cover z-0 brightness-[0.6] grayscale-[0.2]"
       />
 
+      {/* Braj Mandala Background Animation for talking */}
+      <div className={`absolute inset-0 z-5 pointer-events-none transition-opacity duration-700 ${isTalking ? 'opacity-30' : 'opacity-0'}`}>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] border-[2px] border-orange-500/30 rounded-full animate-[spin_20s_linear_infinite]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border-[1px] border-yellow-500/20 rounded-full animate-[spin_15s_linear_infinite_reverse]" />
+      </div>
+
+      {/* Permission Block */}
       {permissionError && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xl p-8">
-          <div className="text-center max-w-md">
-            <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-6" />
-            <h1 className="text-2xl font-bold text-white mb-2 uppercase tracking-tight">Are Lalla!</h1>
-            <p className="text-gray-300 mb-6 font-medium">{permissionError}</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="px-8 py-3 braj-gradient text-white rounded-full font-bold hover:opacity-90 transition-all"
-            >
-              Fir se koshish kar
-            </button>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-8">
+          <div className="text-center">
+            <AlertTriangle className="w-20 h-20 text-yellow-500 mx-auto mb-6 animate-bounce" />
+            <h1 className="text-3xl font-black text-white mb-4 uppercase">Ruk Ja Lalla!</h1>
+            <p className="text-gray-400 mb-8 max-w-xs mx-auto">{permissionError}</p>
+            <button onClick={() => window.location.reload()} className="px-8 py-4 braj-gradient rounded-full font-bold">Try Again</button>
           </div>
         </div>
       )}
 
-      {/* HUD Layer */}
-      <div className="absolute inset-0 z-10 flex flex-col justify-between p-4 pointer-events-none">
+      {/* Main UI Overlay */}
+      <div className="relative z-10 h-full flex flex-col justify-between p-6 pointer-events-none">
         
-        {/* Top Section - Search & Stats */}
-        <div className="space-y-4 pointer-events-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1.5">
-              <div className="glass rounded-full px-4 py-2 flex items-center gap-3 text-white shadow-xl">
-                <div className={`w-2.5 h-2.5 rounded-full ${
-                  connectionState === ConnectionState.CONNECTED ? 'bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.8)]' : 
-                  connectionState === ConnectionState.CONNECTING ? 'bg-yellow-500 animate-pulse' : 'bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.5)]'
-                }`} />
-                <span className="text-[10px] font-black uppercase tracking-[0.15em] opacity-90">
-                    {connectionState === ConnectionState.CONNECTED ? 'Buddy Online' : 
-                     connectionState === ConnectionState.CONNECTING ? 'Bula ryo hu...' : 'Offline'}
-                </span>
-              </div>
+        {/* Top Section */}
+        <div className="flex flex-col gap-4 pointer-events-auto">
+          <div className="flex justify-between items-start">
+            <div className="glass px-5 py-2.5 rounded-full flex items-center gap-3 border-orange-500/20">
+              <div className={`w-3 h-3 rounded-full ${
+                connectionState === ConnectionState.CONNECTED ? 'bg-green-500 shadow-[0_0_15px_#22c55e]' : 
+                connectionState === ConnectionState.CONNECTING ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
+              }`} />
+              <span className="text-xs font-black uppercase tracking-widest text-white/90">
+                {connectionState === ConnectionState.CONNECTED ? 'Buddy Online' : 'Buddy Offline'}
+              </span>
             </div>
-
-            <button 
-              onClick={handleOpenKey}
-              className="glass p-2.5 rounded-full hover:bg-white/10 transition-colors"
-            >
-              <Key className="w-5 h-5 text-white/60" />
+            <button onClick={onResetKey} className="glass p-3 rounded-full hover:bg-white/10 transition-all">
+              <Key className="w-5 h-5 text-white/50" />
             </button>
           </div>
 
-          <form onSubmit={setTarget} className="flex gap-2 w-full max-w-md mx-auto">
-             <div className="flex-1 glass rounded-2xl flex items-center px-4 py-3 shadow-2xl">
-                <MapPin className="w-5 h-5 text-orange-400 mr-3" />
-                <input 
-                  type="text" 
-                  placeholder="Kaha ja ryo hai lalla?" 
-                  className="bg-transparent text-white placeholder-white/40 border-none outline-none w-full text-sm font-semibold"
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                />
-             </div>
-             <button type="submit" className="glass p-3 rounded-2xl flex items-center justify-center hover:bg-white/10 transition-all active:scale-90">
-                <Send className="w-5 h-5 text-orange-400" />
-             </button>
-          </form>
+          {/* Map Grounding Link Display */}
+          {mapResult && mapResult.links.length > 0 && (
+            <div className="flex flex-col gap-2 animate-in fade-in slide-in-from-top-4">
+              {mapResult.links.map((link, idx) => (
+                <a 
+                  key={idx} 
+                  href={link.uri} 
+                  target="_blank" 
+                  className="glass-bright px-4 py-3 rounded-2xl flex items-center justify-between border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <MapPin className="w-5 h-5 text-orange-400" />
+                    <span className="text-sm font-bold text-white">{link.title}</span>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-white/40 group-hover:text-white" />
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
 
-          {currentDestination && (
-             <div className="flex justify-center">
-                <div className="bg-orange-500/20 backdrop-blur-md px-4 py-1.5 rounded-full border border-orange-500/30 flex items-center gap-2">
-                   <Navigation className="w-3 h-3 text-orange-400" />
-                   <span className="text-[10px] font-bold text-orange-200 uppercase tracking-widest">
-                     Target: {currentDestination}
-                   </span>
+        {/* Visualizer center */}
+        <div className="flex-1 flex flex-col items-center justify-center">
+          {connectionState === ConnectionState.CONNECTED && (
+             <div className="relative">
+                <div className="flex items-center gap-1.5 h-32">
+                  {[...Array(16)].map((_, i) => (
+                    <div 
+                      key={i} 
+                      className="w-2 bg-gradient-to-t from-orange-600 via-yellow-400 to-orange-600 rounded-full transition-all duration-100"
+                      style={{ height: isTalking ? `${Math.random() * 80 + 20}%` : `${Math.max(8, volume * 300)}%` }}
+                    />
+                  ))}
                 </div>
              </div>
           )}
         </div>
 
-        {/* Dynamic Voice Feedback */}
-        <div className="flex-1 flex items-center justify-center">
-            {(connectionState === ConnectionState.CONNECTED || connectionState === ConnectionState.CONNECTING) && (
-                <div className="flex flex-col items-center gap-6">
-                    <div className="flex items-center justify-center gap-2 h-24">
-                         {[...Array(12)].map((_, i) => {
-                             const isActive = isTalking || volume > 0.01;
-                             const scale = isTalking ? (Math.random() * 1.8 + 0.4) : (volume * 20 * (i % 2 === 0 ? 1 : 1.3));
-                             return (
-                                <div 
-                                    key={i}
-                                    className={`w-1.5 bg-gradient-to-t from-orange-600 to-yellow-400 rounded-full transition-all duration-150 ${!isActive ? 'opacity-10 h-2' : 'opacity-100 h-20'}`}
-                                    style={{ 
-                                        height: isActive ? `${Math.min(100, 15 + (scale * 40))}%` : '8px',
-                                        transitionDelay: `${i * 20}ms`
-                                    }}
-                                 />
-                             );
-                         })}
-                    </div>
-                    {isTalking && (
-                        <div className="px-6 py-3 glass rounded-2xl border border-orange-500/30 animate-pulse shadow-2xl shadow-orange-500/20">
-                             <p className="text-white font-black text-xs tracking-[0.1em] uppercase">"Suno Lalla..."</p>
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-
-        {/* Bottom Bar */}
-        <div className="flex flex-col gap-6 pointer-events-auto items-center pb-6">
-            {connectionState === ConnectionState.DISCONNECTED && (
-                 <div className="glass p-6 rounded-[2.5rem] max-w-xs text-center border border-white/20 shadow-2xl transition-all duration-700 animate-in slide-in-from-bottom-20">
-                    <div className="braj-gradient w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <MessageCircle className="w-6 h-6 text-white" />
-                    </div>
-                    <h2 className="text-2xl font-black text-white mb-2 tracking-tighter">RADHE RADHE!</h2>
-                    <p className="text-sm text-gray-200/80 font-medium leading-relaxed mb-4">
-                        Apne Braj Buddy se baat kar. Poochh "Bhaiya, Vrindavan kitni door hai?"
-                    </p>
-                    <div className="flex items-center justify-center gap-1.5">
-                       <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                       <div className="w-1.5 h-1.5 rounded-full bg-orange-500 opacity-50" />
-                       <div className="w-1.5 h-1.5 rounded-full bg-orange-500 opacity-20" />
-                    </div>
-                 </div>
-            )}
-
-            <div className="flex flex-col items-center gap-4">
-              <button
-                  onClick={handleToggleConnection}
-                  disabled={connectionState === ConnectionState.CONNECTING}
-                  className={`
-                      w-28 h-28 rounded-[2.5rem] flex items-center justify-center shadow-2xl transition-all duration-500 group relative
-                      ${connectionState === ConnectionState.CONNECTED 
-                          ? 'bg-red-500 shadow-red-500/40 rotate-180' 
-                          : 'braj-gradient shadow-orange-500/40'
-                      }
-                      ${connectionState === ConnectionState.CONNECTING ? 'opacity-50 cursor-not-allowed grayscale' : 'active:scale-95 hover:scale-105'}
-                  `}
-              >
-                  {connectionState === ConnectionState.CONNECTED ? (
-                      <Power className="w-10 h-10 text-white" />
-                  ) : (
-                      <Mic className="w-10 h-10 text-white" />
-                  )}
-                  {connectionState === ConnectionState.CONNECTED && (
-                    <div className="absolute -inset-4 rounded-[3rem] border-2 border-red-500/30 animate-ping pointer-events-none" />
-                  )}
-              </button>
-              
-              <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.3em] bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
-                  {connectionState === ConnectionState.CONNECTED ? 'Kaat de baatcheet' : 'Buddy ko bulao'}
-              </p>
+        {/* Bottom Section */}
+        <div className="flex flex-col gap-6 items-center pointer-events-auto pb-8">
+          
+          {/* Instructions Box */}
+          {connectionState === ConnectionState.DISCONNECTED && (
+            <div className="glass p-6 rounded-[2rem] border-white/10 text-center max-w-xs shadow-2xl animate-in fade-in zoom-in duration-500">
+               <Compass className="w-10 h-10 text-orange-500 mx-auto mb-3 animate-[spin_4s_linear_infinite]" />
+               <p className="text-white font-bold mb-1">Ram Ram Ji!</p>
+               <p className="text-xs text-white/60 leading-relaxed uppercase tracking-tight">Poochh lalla, kaha jana hai? Ya fir camera dikha de!</p>
             </div>
+          )}
+
+          <div className="relative group">
+            <button
+              onClick={handleToggleConnection}
+              disabled={connectionState === ConnectionState.CONNECTING}
+              className={`
+                w-24 h-24 rounded-full flex items-center justify-center transition-all duration-500 relative z-20 shadow-2xl
+                ${connectionState === ConnectionState.CONNECTED ? 'bg-red-500' : 'braj-gradient'}
+                ${connectionState === ConnectionState.CONNECTING ? 'opacity-50 cursor-wait' : 'hover:scale-110 active:scale-90'}
+              `}
+            >
+              {connectionState === ConnectionState.CONNECTED ? <Power className="w-10 h-10 text-white" /> : <MessageCircle className="w-10 h-10 text-white" />}
+            </button>
+            {connectionState === ConnectionState.CONNECTED && (
+              <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-20 z-10" />
+            )}
+            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap">
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30 group-hover:text-orange-500 transition-colors">
+                {connectionState === ConnectionState.CONNECTED ? 'Band Kar' : 'Buddy Ko Bula'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-      
-      {/* Decorative corners */}
-      <div className="absolute top-0 left-0 w-16 h-16 border-t-2 border-l-2 border-white/10 rounded-tl-3xl m-4 pointer-events-none" />
-      <div className="absolute top-0 right-0 w-16 h-16 border-t-2 border-r-2 border-white/10 rounded-tr-3xl m-4 pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-16 h-16 border-b-2 border-l-2 border-white/10 rounded-bl-3xl m-4 pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-16 h-16 border-b-2 border-r-2 border-white/10 rounded-br-3xl m-4 pointer-events-none" />
+
+      <style>{`
+        .glass-bright {
+          background: rgba(255, 100, 0, 0.15);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        @keyframes spin {
+          from { transform: translate(-50%, -50%) rotate(0deg); }
+          to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
