@@ -1,0 +1,9 @@
+{
+  "name": "Braj Bhasha Buddy",
+  "description": "A funny AR navigation assistant that speaks in Hindi Braj Bhasha. Point your camera, ask for directions, and get real-time guidance from your AI dost.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
