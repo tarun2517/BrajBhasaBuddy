@@ -2,9 +2,10 @@ import { GoogleGenAI } from "@google/genai";
 import { GeoLocation, MapSearchResult } from "../types";
 
 export const searchMaps = async (query: string, location: GeoLocation): Promise<MapSearchResult> => {
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Always create a new instance right before the call to get the latest key
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+  try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: `User is at Lat ${location.lat}, Lng ${location.lng}. They asked: "${query}". 
@@ -30,7 +31,7 @@ export const searchMaps = async (query: string, location: GeoLocation): Promise<
         if (chunk.maps) {
           links.push({
             uri: chunk.maps.uri,
-            title: chunk.maps.title || "See on Maps"
+            title: chunk.maps.title || "Vrindavan Path"
           });
         }
       });
@@ -42,8 +43,9 @@ export const searchMaps = async (query: string, location: GeoLocation): Promise<
     };
   } catch (error: any) {
     console.error("Map service error:", error);
+    // If the key is invalid or the project isn't found, we propagate the error to trigger re-selection
     if (error.message?.includes("Requested entity was not found")) {
-        throw error; // Let the caller handle the API key re-selection
+        throw error;
     }
     return {
       text: "Are lalla, naksha khul na ryo. Lag ryo hai internet marya gayo.",

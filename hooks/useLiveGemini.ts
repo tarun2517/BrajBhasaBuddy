@@ -91,7 +91,6 @@ export const useLiveGemini = (
   const [isTalking, setIsTalking] = useState(false);
   const [volume, setVolume] = useState(0);
 
-  const sessionRef = useRef<any>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const nextStartTimeRef = useRef<number>(0);
@@ -106,6 +105,8 @@ export const useLiveGemini = (
   const connect = useCallback(async () => {
     try {
       setConnectionState(ConnectionState.CONNECTING);
+      
+      // CRITICAL: Instantiate GoogleGenAI right before connection
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -125,13 +126,13 @@ export const useLiveGemini = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction: `
-            You are "Braj Bhasha Buddy", a hilarious AR navigator. 
-            You speak Braj Bhasha (Mathura style Hindi).
-            You act as if you are actually inside the phone, looking through the camera.
-            If you see the user, call them "Lalla" or "Gunda".
-            If they ask for directions, you MUST use the lookUpMapInfo tool.
-            Be grumpy but funny. Complain about the user's choices.
-            Always keep answers extremely brief (max 10-15 words).
+            You are "Braj Bhasha Buddy", a hilarious AR navigator from Mathura. 
+            Speak Braj Bhasha (Hindi dialect).
+            Look through the camera. If you see movement or objects, comment on them.
+            Call the user "Lalla" or "Gunda".
+            If they ask where something is, use the lookUpMapInfo tool immediately.
+            Grumpy personality: complain about traffic, heat, or the user's slowness.
+            Keep all answers under 12 words. No long speeches!
           `,
           tools: [{ functionDeclarations: [mapToolDeclaration] }],
         },
@@ -213,15 +214,19 @@ export const useLiveGemini = (
           },
           onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
           onerror: (e: any) => {
-            console.error(e);
-            if (e.message?.includes("Requested entity was not found")) onResetKey();
+            console.error("Live API Error:", e);
+            if (e.message?.includes("Requested entity was not found")) {
+              onResetKey();
+            }
             setConnectionState(ConnectionState.ERROR);
           }
         }
       });
-      sessionRef.current = await sessionPromise;
     } catch (err: any) {
-      if (err.message?.includes("Requested entity was not found")) onResetKey();
+      console.error("Connection attempt failed:", err);
+      if (err.message?.includes("Requested entity was not found")) {
+        onResetKey();
+      }
       setConnectionState(ConnectionState.ERROR);
     }
   }, [videoRef, canvasRef, onMapResults, onResetKey]);
