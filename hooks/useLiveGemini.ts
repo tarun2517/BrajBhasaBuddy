@@ -106,8 +106,10 @@ export const useLiveGemini = (
     try {
       setConnectionState(ConnectionState.CONNECTING);
       
-      // CRITICAL: Instantiate GoogleGenAI right before connection
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) throw new Error("API Key not found in environment.");
+
+      const ai = new GoogleGenAI({ apiKey });
 
       const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -126,13 +128,15 @@ export const useLiveGemini = (
             voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
           },
           systemInstruction: `
-            You are "Braj Bhasha Buddy", a hilarious AR navigator from Mathura. 
-            Speak Braj Bhasha (Hindi dialect).
-            Look through the camera. If you see movement or objects, comment on them.
-            Call the user "Lalla" or "Gunda".
-            If they ask where something is, use the lookUpMapInfo tool immediately.
-            Grumpy personality: complain about traffic, heat, or the user's slowness.
-            Keep all answers under 12 words. No long speeches!
+            Persona: "Braj Buddy" - A grumpy, street-smart guide from Mathura.
+            Language: Braj Bhasha / Hindi dialect.
+            Directives:
+            - You're watching through the camera. Comment on what you see!
+            - Call the user "Lalla", "Gunda", or "Hore Chhore".
+            - If they ask for directions or places, use 'lookUpMapInfo' immediately.
+            - Grumpy but loving. Complain about heat, noise, or "Lalla's" slow brain.
+            - KEEP IT VERY SHORT. Maximum 10 words per turn.
+            - "Radhe Radhe" is your greeting.
           `,
           tools: [{ functionDeclarations: [mapToolDeclaration] }],
         },
@@ -215,18 +219,14 @@ export const useLiveGemini = (
           onclose: () => setConnectionState(ConnectionState.DISCONNECTED),
           onerror: (e: any) => {
             console.error("Live API Error:", e);
-            if (e.message?.includes("Requested entity was not found")) {
-              onResetKey();
-            }
+            if (e.message?.includes("Requested entity was not found")) onResetKey();
             setConnectionState(ConnectionState.ERROR);
           }
         }
       });
     } catch (err: any) {
-      console.error("Connection attempt failed:", err);
-      if (err.message?.includes("Requested entity was not found")) {
-        onResetKey();
-      }
+      console.error("Connection failed:", err);
+      if (err.message?.includes("Requested entity was not found")) onResetKey();
       setConnectionState(ConnectionState.ERROR);
     }
   }, [videoRef, canvasRef, onMapResults, onResetKey]);
